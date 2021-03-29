@@ -1,21 +1,31 @@
 #!/usr/bin/env python
+"""
 
+
+"""
 
 import numpy as np
 import os
 import sys
 import glob
-import aztools as az
 import scipy.stats as st
 import pylab as plt
 
 
+
 def process_one_file(fname):
-    """Process the result of scan_en_norm from az.tcl for a single file
-    If fname has a form {base}.scan, we search for {base}.sim resulting from
-    az_sim_dchi2 to get the data-based distribution of chi2 to use instead of ftest
+    """Process the result of az_scan_en_norm from az.tcl for a single file
+
+    fname: the {base}.scan file written out by az_scan_en_norm in az.tcl
+        We also search for {base}.sim in the same location base {base}.scan resulting from
+        az_sim_dchi2 to get the data-based distribution of chi2 to use for calculating
+        the probabilities instead of ftest.
+
+    Write the resulting plot to a veusz (https://veusz.github.io/) file with the name
+        {path_to_input_dir}/{input_file}.2d.plot
     """
 
+    # do we have a simulation data file for the reference probability density?
     sim_data = None
     if fname[-4:] == 'scan':
         sfile = fname[:-4] + 'sim'
@@ -23,7 +33,7 @@ def process_one_file(fname):
             sim_data = np.loadtxt(sfile)
 
 
-    
+    # read the scanning data of energy-normalization
     data  = np.loadtxt(fname)
     with open(fname, 'r') as fp:
         line = fp.readline()
@@ -34,7 +44,7 @@ def process_one_file(fname):
     nm_arr = data[:, 1]
     stat   = data[:, 2]
 
-
+    # turn the 1d arrays to 2d
     nen, nnm = len(np.unique(en_arr)), len(np.unique(nm_arr))
     en_arr = en_arr.reshape((nnm, nen))
     nm_arr = nm_arr.reshape((nnm, nen))
@@ -43,14 +53,14 @@ def process_one_file(fname):
     inm    = np.argsort(nm)
     nm     = nm[inm]
     stat   = stat.reshape((nnm, nen))[inm, :]
-    ipos   = nm > 0
-    ineg   = nm < 0
 
 
-    # statistics #
+    ## statistics ##
+    # use simulated statistics if available to obtain the significance
     if not sim_data is None:
         sim_dchi2 = (sim_data[:,-1]/2) / (sim_data[:,-2] / (dof_0 - 2))
         obs_dchi2 = ((stat_0 - stat)/2) / (stat / (dof_0 - 2))
+        # approximate the simulated distribution with an f-distribution
         sim_pvalue = 1 - st.f(*(st.f.fit(sim_dchi2))).cdf(obs_dchi2)
         #sim_pvalue = np.argmin(np.abs(np.sort(sim_dchi2)[None,None,::-1] - 
         #                              obs_dchi2[:,:,None]), axis=2) / len(sim_dchi2)
@@ -68,56 +78,41 @@ def process_one_file(fname):
     nsigma = -st.norm.ppf(pvalue/2)
 
 
-    basedir = '/'.join(['.'] + fname.split('/')[:-1]) + '/veusz'
-    os.system('mkdir -p {}'.format(basedir))
+    from scipy.ndimage import zoom
+    nn, xx, yy = zoom(nsigma, 1), zoom(en, 1), zoom(nm, 1)
+    lv = [0.5, 1, 2, 3, 4, 5]
+    plt.contourf(xx, yy, nn, levels=lv, cmap='GnBu')
+    cs = plt.contour(xx, yy, nn, levels=lv, linewidths=0.5, colors='k')
+    ylim = 1.2*np.abs(nm[np.any(nsigma > 0.5, 1)][[0,-1]]).max()
+    plt.ylim([-ylim, ylim])
+
+    from IPython import embed; embed();exit(0)
+
+    # prepare the output; write to folder veusz in the same location as input file(s)
+    basedir = '/'.join(['.'] + fname.split('/')[:-1])
 
     outfile = '{}/{}.2d.plot'.format(basedir, 
             '.'.join(os.path.basename(fname).split('.')[:-1]))
+    # print a useful line that helps when reading the files to veusz
     with open(outfile, 'w') as fp:
-        fp.write(('# 1,2,3sigma: 2.296 6.18 11.829\n'
-                  '# stat pvalue nsigma prob stat_pos pvalue_pos nsigma_pos prob_pos '
-                    'stat_neg pvalue_neg nsigma_neg prob_neg ') + (
-                    '\n' if sim_data is None else 
-                    'pvalue_sim nsigma_sim pvalue_pos_sim nsigma_po_sim pvalue_neg_sim pvalue_neg_sim\n'
+        fp.write(('# pvalue nsigma prob ') + (
+                    '\n' if sim_data is None else 'pvalue_sim nsigma_sim\n'
                 ))
-    az.misc.write_2d_veusz(outfile, stat.T,   xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, pvalue.T, xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, nsigma.T, xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, prob.T,   xcent=en, ycent=nm, append=1)
-
-    # positive norm #
-    az.misc.write_2d_veusz(outfile, stat[ipos].T,   xcent=en, ycent=nm[ipos], append=1)
-    az.misc.write_2d_veusz(outfile, pvalue[ipos].T, xcent=en, ycent=nm[ipos], append=1)
-    az.misc.write_2d_veusz(outfile, nsigma[ipos].T, xcent=en, ycent=nm[ipos], append=1) 
-    az.misc.write_2d_veusz(outfile, prob[ipos].T,  xcent=en, ycent=nm[ipos], append=1) 
-
-    # negative norm #
-    az.misc.write_2d_veusz(outfile, stat[ineg].T,   xcent=en, ycent=-nm[ineg], append=1)
-    az.misc.write_2d_veusz(outfile, pvalue[ineg].T, xcent=en, ycent=-nm[ineg], append=1)
-    az.misc.write_2d_veusz(outfile, nsigma[ineg].T, xcent=en, ycent=-nm[ineg], append=1) 
-    az.misc.write_2d_veusz(outfile, prob[ineg].T,   xcent=en, ycent=-nm[ineg], append=1) 
+    write_2d_veusz(outfile, pvalue.T, en, nm, 1)
+    write_2d_veusz(outfile, nsigma.T, en, nm, 1)
+    write_2d_veusz(outfile, prob.T,   en, nm, 1)
 
     if not sim_data is None:
-        az.misc.write_2d_veusz(outfile, sim_pvalue.T, xcent=en, ycent=nm, append=1)
-        az.misc.write_2d_veusz(outfile, sim_nsigma.T, xcent=en, ycent=nm, append=1)
-        az.misc.write_2d_veusz(outfile, sim_prob.T,   xcent=en, ycent=nm, append=1)
+        write_2d_veusz(outfile, sim_pvalue.T, en, nm, 1)
+        write_2d_veusz(outfile, sim_nsigma.T, en, nm, 1)
+        write_2d_veusz(outfile, sim_prob.T,   en, nm, 1)
 
-        # positive norm #
-        az.misc.write_2d_veusz(outfile, sim_pvalue[ipos].T, xcent=en, ycent=nm[ipos], append=1)
-        az.misc.write_2d_veusz(outfile, sim_nsigma[ipos].T, xcent=en, ycent=nm[ipos], append=1) 
-        az.misc.write_2d_veusz(outfile, sim_prob[ipos].T, xcent=en, ycent=nm[ipos], append=1) 
-
-        # negative norm #
-        az.misc.write_2d_veusz(outfile, sim_pvalue[ineg].T, xcent=en, ycent=-nm[ineg], append=1)
-        az.misc.write_2d_veusz(outfile, sim_nsigma[ineg].T, xcent=en, ycent=-nm[ineg], append=1) 
-        az.misc.write_2d_veusz(outfile, sim_prob[ineg].T, xcent=en, ycent=-nm[ineg], append=1) 
 
     if sim_data is None:
-        return stat, stat_0, dof_0, pvalue, nsigma, nm, en, ipos, ineg
+        return stat, stat_0, dof_0, pvalue, nsigma, nm, en
     else:
-        return stat, stat_0, dof_0, [pvalue, sim_pvalue], [nsigma, sim_nsigma], nm, en, ipos, ineg
+        return stat, stat_0, dof_0, [pvalue, sim_pvalue], [nsigma, sim_nsigma], nm, en
 
-    # add constrains from the simulations
 
 
 def combine_results(res):
@@ -131,15 +126,13 @@ def combine_results(res):
         raise ValueError('combining data needs more than one file')
 
     if not np.all([r[0].shape==res[0][0].shape for r in res]):
-        raise ValueError('files properties do not match')
+        raise ValueError('array dimensions of input files do not match')
 
-    # combine data #
+    # combine data, first by summing the statistics #
     stat   = np.array([r[0] for r in res]).sum(0)
     stat_0 = np.array([r[1] for r in res]).sum(0)
     dof_0  = np.array([r[2] for r in res]).sum(0)
     nm,en  = res[0][5], res[0][6]
-    ipos   = res[0][7]
-    ineg   = res[0][8]
     ipvalue = np.array([r[3] for r in res])
     ipvalue_sim = None
     if len(ipvalue.shape) == 4:
@@ -169,44 +162,57 @@ def combine_results(res):
 
     outfile = 'combined_scan.2d.plot'
     with open(outfile, 'w') as fp:
-        fp.write(('# stat pvalue nsigma prob stat_pos pvalue_pos nsigma_pos prob_pos '
-                    'stat_neg pvalue_neg nsigma_neg prob_neg cpvalue cnsigma cprob ') + (
+        fp.write(('# pvalue nsigma prob cpvalue cnsigma cprob ') + (
                     '\n' if ipvalue_sim is None else 
                     'cpvalue_sim cnsigma_sim cprob_sim\n'
                 ))
-    az.misc.write_2d_veusz(outfile, stat.T,   xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, pvalue.T, xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, nsigma.T, xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, prob.T,   xcent=en, ycent=nm, append=1)
+    write_2d_veusz(outfile, pvalue.T, en, nm, 1)
+    write_2d_veusz(outfile, nsigma.T, en, nm, 1)
+    write_2d_veusz(outfile, prob.T,   en, nm, 1)
 
-    # positive norm #
-    az.misc.write_2d_veusz(outfile, stat[ipos].T,   xcent=en, ycent=nm[ipos], append=1)
-    az.misc.write_2d_veusz(outfile, pvalue[ipos].T, xcent=en, ycent=nm[ipos], append=1)
-    az.misc.write_2d_veusz(outfile, nsigma[ipos].T, xcent=en, ycent=nm[ipos], append=1) 
-    az.misc.write_2d_veusz(outfile, prob[ipos].T,   xcent=en, ycent=nm[ipos], append=1) 
-
-    # negative norm #
-    az.misc.write_2d_veusz(outfile, stat[ineg].T,   xcent=en, ycent=-nm[ineg], append=1)
-    az.misc.write_2d_veusz(outfile, pvalue[ineg].T, xcent=en, ycent=-nm[ineg], append=1)
-    az.misc.write_2d_veusz(outfile, nsigma[ineg].T, xcent=en, ycent=-nm[ineg], append=1) 
-    az.misc.write_2d_veusz(outfile, prob[ineg].T,   xcent=en, ycent=-nm[ineg], append=1) 
-
-    az.misc.write_2d_veusz(outfile, cpvalue.T, xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, cnsigma.T, xcent=en, ycent=nm, append=1)
-    az.misc.write_2d_veusz(outfile, cprob.T,   xcent=en, ycent=nm, append=1)
+    write_2d_veusz(outfile, cpvalue.T, en, nm, 1)
+    write_2d_veusz(outfile, cnsigma.T, en, nm, 1)
+    write_2d_veusz(outfile, cprob.T,   en, nm, 1)
     if not ipvalue_sim is None:
-        az.misc.write_2d_veusz(outfile, cpvalue_sim.T, xcent=en, ycent=nm, append=1)
-        az.misc.write_2d_veusz(outfile, cnsigma_sim.T, xcent=en, ycent=nm, append=1)
-        az.misc.write_2d_veusz(outfile, cprob_sim.T,   xcent=en, ycent=nm, append=1)
+        write_2d_veusz(outfile, cpvalue_sim.T, en, nm, 1)
+        write_2d_veusz(outfile, cnsigma_sim.T, en, nm, 1)
+        write_2d_veusz(outfile, cprob_sim.T,   en, nm, 1)
 
     print('** result saved to {} **'.format(outfile))
+
+
+def write_2d_veusz(fname, arr, xcent=None, ycent=None, append=False):
+    """Write a 2d array to a file for veusz viewing
+    
+    Args:
+        fname: name of file to write
+        arr: array to write, shape (len(xcent), len(ycent))
+        xcent, ycent: central points of axes.
+        append: append to file? Default=False
+    """
+
+    thead = '\n\n'
+    if xcent is not None and ycent is not None:
+        assert( arr.shape==(len(xcent),len(ycent)))
+        thead += (  'xcent ' + 
+                    ' '.join(['{}'.format(x) for x in xcent]) + '\n')
+        thead += (  'ycent ' +
+                    ' '.join(['{}'.format(x) for x in ycent]) + '\n')
+    arr = arr.T
+    txt2d = '\n'.join([
+            '{}'.format(' '.join(['{:3.3e}'.format(arr[i, j])
+                        for j in range(len(arr[0]))]))
+                for i in range(len(arr))
+        ])
+    with open( fname, 'a' if append else 'w' ) as fp:
+        fp.write(thead+txt2d)
 
 
 if __name__ == '__main__':
     """Process the files resulting from calling scan_en_norm in az.tcl
     If one file is given, process it.
     if more than one file are given, process each one, then produce the
-    result from the combination.
+    result from their combination.
 
 
     """

@@ -66,7 +66,7 @@ proc az_scan_en_norm { args } {
     set query [tcloutr query]
     set chatlevel [scan [tcloutr chatter] "%d"]
     query yes
-    #chatter 0
+    chatter 0
     ## ---------------------- ##
 
     
