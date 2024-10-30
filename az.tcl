@@ -72,7 +72,7 @@ proc az_scan_en_norm { args } {
     
 
     ## -- load xcm file -- ##
-    @$xcm_file
+    eval "@$xcm_file"
     fit 500
     set stat0 [tcloutr stat]
     scan [tcloutr dof] "%d %d" dof npha
@@ -181,11 +181,11 @@ proc az_sim_dchi2 { args } {
 
 
     ## -- read xcm file -- ##
-    @$xcm_file
+    eval "@$xcm_file"
     fit 1000
 
     ## -- save model -- ##
-    rm $modfile &> /dev/null
+    catch {file delete $modfile}
     save model $modfile
     
 
@@ -262,7 +262,7 @@ proc az_sim_dchi2 { args } {
         #----------------------------------------#
 
         #--- load original model and fit ---#
-        @$modfile
+        eval "@$modfile"
         fit; fit; fit
         set stat [tcloutr stat]
         #------------------------------------#
@@ -312,7 +312,7 @@ proc az_sim_dchi2 { args } {
         }
 
         # load original model #
-        @$modfile
+        eval "@$modfile"
         fit
         #---------------#
     }
@@ -624,7 +624,7 @@ proc az_calc_errors { args } {
     }
 
     # save xcm file #
-    rm $suff.xcm >& /dev/null
+    catch {file delete $suff.xcm}
     save all $suff
     puts "-- saved $suff.xcm --"
 
@@ -942,7 +942,7 @@ proc az_plot_unfold {args} {
 
         # load model back
         if {[llength $m] > 1} {
-            @$tmpfile
+            eval "@$tmpfile"
         } else {
             mo none
         }
@@ -1000,7 +1000,7 @@ proc az_plot_unfold {args} {
         
     }
     close $fp
-    @$tmpfile
+    eval "@$tmpfile"
     puts "@@ Done @@"
     chatter 10 10
 }
