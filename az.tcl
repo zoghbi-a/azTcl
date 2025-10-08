@@ -430,14 +430,19 @@ proc az_untie_spec { args } {
     }
 
     # now untie the ipar's from datasets n #
-    set text ""
-    for {set i 0} {$i<[llength $n]} {incr i} {
-        foreach j $ipar {
-            append text " [expr ([lindex $n $i]-1) * $npar + $j]"
+    set text "&"
+    for {set i 1} {$i <= [tcloutr datagrp]} {incr i} {
+        for {set j 1} {$j <= $npar } {incr j} {
+            if {[lsearch $ipar $j] != -1 && [lsearch $n $i] != -1 } {
+                set pval [tcloutr param $j]
+                append text " $pval&"
+            } else {
+                append text "&"
+            }
         }
     }
-    puts "untie $text"
-    untie $text
+    # puts "1-[tcloutr modpar] $text"
+    newpar 1-[tcloutr modpar] $text
 }
 
 # calculate error for a single parameter #
